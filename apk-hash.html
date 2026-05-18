@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APK Certificate Hash Viewer</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem}
+.container{max-width:640px;width:100%}
+h1{font-size:1.5rem;margin-bottom:.5rem}
+p{color:#8b949e;margin-bottom:1.5rem}
+.drop{border:2px dashed #30363d;border-radius:8px;padding:3rem 2rem;text-align:center;cursor:pointer;transition:border-color .2s}
+.drop:hover,.drop.dragover{border-color:#58a6ff}
+.drop input{display:none}
+.res{margin-top:1.5rem;padding:1rem;background:#161b22;border-radius:8px;border:1px solid #30363d;display:none}
+.hash{font-family:monospace;font-size:.85rem;word-break:break-all;background:#0d1117;padding:.5rem;border-radius:4px;margin-top:.5rem;color:#7ee787}
+.hash+.hash{margin-top:.25rem}
+.pkg{color:#79c0ff;margin-bottom:.25rem;word-break:break-all}
+.stat{color:#8b949e;font-size:.8rem;margin-top:.5rem}
+.ld{color:#8b949e;margin-top:1rem;display:none}
+.err{color:#f85149;margin-top:1rem;display:none}
+.ft{margin-top:2rem;color:#484f58;font-size:.8rem}
+.note{font-size:.8rem;color:#484f58;margin-top:1rem}
+.copy{font-size:.75rem;color:#58a6ff;cursor:pointer;margin-left:.5rem;user-select:none}
+.copy:hover{color:#79c0ff}
+.sep{margin:1rem 0;border:0;border-top:1px solid #30363d}
+.multi{font-size:.8rem;color:#d29922;margin-top:.25rem}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>APK Certificate Hash Viewer</h1>
+<p>Drop an APK to extract its signing certificate SHA-256 hash.</p>
+<div class="drop" id="dz">
+<p>Drop APK here or click to browse</p>
+<input type="file" id="fi" accept=".apk">
+</div>
+<div class="ld" id="ld">Processing…</div>
+<div class="err" id="err"></div>
+<div class="res" id="res">
+<div class="pkg" id="pkg"></div>
+<hr class="sep">
+<div id="hs"></div>
+<div class="stat" id="stat"></div>
+</div>
+<p class="note">All client-side via Web Crypto API. No upload.</p>
+<p class="ft">Port of <a href="https://github.com/anomalyco/opencode" style="color:#484f58">apk-hash.ps1</a></p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const dz=document.getElementById('dz'),fi=document.getElementById('fi'),ld=document.getElementById('ld'),err=document.getElementById('err'),res=document.getElementById('res'),pkg=document.getElementById('pkg'),hs=document.getElementById('hs'),stat=document.getElementById('stat');
+
+dz.addEventListener('click',()=>fi.click());
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('dragover')});
+dz.addEventListener('dragleave',()=>dz.classList.remove('dragover'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('dragover');const f=e.dataTransfer.files[0];if(f)process(f)});
+fi.addEventListener('change',()=>{if(fi.files[0])process(fi.files[0])});
+
+async function process(file){
+ err.style.display='none';res.style.display='none';ld.style.display='block';stat.textContent='';
+ try{
+  const buf=await file.arrayBuffer();
+  const pkgName=await extractPkg(buf);
+  const hashes=await extractHashes(buf);
+  if(hashes.length===0)throw new Error('No signing certificate hashes found. The APK may not be signed with v2/v3 scheme.');
+  pkg.textContent=pkgName;
+  hs.innerHTML=hashes.map((h,i)=>`<div class="hash">${h}${hashes.length>1?' <span class="copy" data-i="'+i+'">[copy]</span>':''}</div>`).join('');
+  if(hashes.length===1){
+   const h=hashes[0];hs.innerHTML=`<div class="hash">${h} <span class="copy">[copy]</span></div>`;
+  }
+  stat.textContent=hashes.length===1?'1 signer':`${hashes.length} signers (multiple)`;
+  if(hashes.length>1)stat.innerHTML+=' <span class="multi">verify independently which is the expected signing cert</span>';
+  res.style.display='block';
+  document.querySelectorAll('.copy').forEach(el=>el.addEventListener('click',()=>{
+   const idx=el.dataset.i!==undefined?parseInt(el.dataset.i):0;
+   navigator.clipboard.writeText(hashes[idx]).catch(()=>{});
+  }));
+ }catch(e){err.textContent='Error: '+e.message;err.style.display='block'}
+ finally{ld.style.display='none'}
+}
+
+async function extractPkg(buf){
+ try{
+  const zip=await JSZip.loadAsync(buf);
+  const me=zip.file('AndroidManifest.xml');
+  if(!me)return '(unknown)';
+  const raw=await me.async('uint8array');
+  return parseAXML(raw)||'(unknown)';
+ }catch{return '(unknown)'}
+}
+
+function parseAXML(d){
+ const v=new DataView(d.buffer,d.byteOffset,d.byteLength);
+ let pos=0;
+ const chunkType=v.getUint16(pos,true);pos+=2;
+ const hdrSize=v.getUint16(pos,true);pos+=2;
+ const chunkSize=v.getUint32(pos,true);pos+=4;
+ if(chunkType!==3)return null;
+ pos=hdrSize;
+ const spType=v.getUint16(pos,true);pos+=2;
+ pos+=2; // headerSize
+ pos+=4; // chunkSize
+ if(spType!==1)return null;
+ const strCount=v.getUint32(pos,true);pos+=4;
+ const styCount=v.getUint32(pos,true);pos+=4;
+ const flags=v.getUint32(pos,true);pos+=4;
+ const strOff=v.getUint32(pos,true);pos+=4;
+ const styOff=v.getUint32(pos,true);pos+=4;
+ const isUTF8=!!(flags&0x100);
+ const chunkStart=pos-8-(hdrSize-8);
+ const strDataStart=chunkStart+strOff;
+ const strOffsets=[];
+ for(let i=0;i<strCount;i++){strOffsets.push(v.getUint32(pos,true));pos+=4}
+ const strs=[];
+ for(let i=0;i<strCount;i++){
+  const so=strOffsets[i];
+  try{
+   if(isUTF8){
+    let p=strDataStart+so;
+    const cc=rle(d,p);p+=cc.bytes;
+    const bc=rle(d,p);p+=bc.bytes;
+    const dec=new TextDecoder('utf-8').decode(d.slice(p,p+bc.value));
+    strs.push(dec);
+   }else{
+    let p=strDataStart+so;const c=[];
+    while(p+1<d.length){const cv=v.getUint16(p,true);p+=2;if(cv===0)break;c.push(String.fromCharCode(cv))}
+    strs.push(c.join(''));
+   }
+  }catch{}
+ }
+ for(const s of strs){
+  if(s&&/^[a-zA-Z][\w.]*\.[\w.]+$/.test(s)&&!s.startsWith('android.')&&!s.startsWith('com.android.'))return s;
+ }
+ return null;
+}
+function rle(d,o){
+ let b=d[o];
+ if(!(b&0x80))return{value:b&0x7F,bytes:1};
+ return{value:((b&0x7F)<<8)|d[o+1],bytes:2};
+}
+
+async function extractHashes(buf){
+ const d=new Uint8Array(buf);
+ const v=new DataView(buf);
+ const l=d.length;
+ let eocd=-1;
+ for(let i=l-22;i>=0;i--){if(d[i]===0x50&&d[i+1]===0x4b&&d[i+2]===0x05&&d[i+3]===0x06){eocd=i;break}}
+ if(eocd<0)return[];
+ const cdOff=v.getUint32(eocd+16,true);
+ const mg=new TextEncoder().encode('APK Sig Block 42');
+ let mp=-1;
+ for(let i=Math.max(0,cdOff-200000);i<=cdOff-16;i++){let ok=true;for(let j=0;j<16;j++){if(d[i+j]!==mg[j]){ok=false;break}}if(ok){mp=i;break}}
+ if(mp<0)return[];
+ const bs=Number(v.getBigUint64(mp-8,true));
+ let x=mp+8-bs+8;
+ const end=mp-8;
+ const hashes=[];
+ while(x+8<=end){
+  const id=v.getUint32(x,true);
+  const vl=v.getUint32(x+4,true);
+  const vs=x+8;
+  if(id===0x7109871a||id===0xf05368c0){
+   const sub=new Uint8Array(buf,vs,vl);
+   for(let k=0;k<sub.length-4;k++){
+    if(sub[k]===0x30&&sub[k+1]===0x82){
+     const cl=(sub[k+2]<<8)|sub[k+3];
+     const tot=4+cl;
+     if(cl>300&&cl<5000&&(k+tot)<=sub.length){
+      const der=new Uint8Array(tot);
+      der.set(new Uint8Array(sub.buffer,sub.byteOffset+k,tot));
+      try{
+       const hb=await crypto.subtle.digest('SHA-256',der);
+       const ha=new Uint8Array(hb);
+       const hex=Array.from(ha).map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join(':');
+       if(!hashes.includes(hex))hashes.push(hex);
+      }catch{}
+     }
+    }
+   }
+  }
+  x=vs+vl;
+ }
+ return hashes;
+}
+</script>
+</body>
+</html>
