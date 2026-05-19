@@ -51,6 +51,10 @@ Neither tool relies on external command-line tools (`apksigner`, `keytool`, `ope
 
 Open `index.html` in any modern browser, then drag an APK onto the page or click to browse. The hash displays immediately — no installation or backend required.
 
+## Notes
+
+Certificate extraction uses a targeted byte scanner rather than a full ASN.1 parser. The tool looks for `0x30 0x82` (SEQUENCE with long-form length), then validates the inner SEQUENCE starts with an INTEGER serial or EXPLICIT version tag — which distinguishes X.509 certificates from other DER structures like SubjectPublicKeyInfo. This approach is simpler and more auditable for the specific APK signing block format, but would need to be extended for edge cases like v3 key rotation lineage or non-standard certificate encoding.
+
 ## License
 
 [MIT](LICENSE)
