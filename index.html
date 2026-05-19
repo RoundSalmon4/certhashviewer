@@ -74,7 +74,7 @@ async function process(file){
    if(hashes.length>1)stat.innerHTML+=' <span class="multi">verify independently which is the expected signing cert</span>';
    res.style.display='block';
    document.querySelectorAll('.copy').forEach(el=>el.addEventListener('click',()=>{
-    const idx=parseInt(el.dataset.i);navigator.clipboard.writeText(copyData(hashes[idx])).catch(()=>{});
+    const idx=parseInt(el.dataset.i);    navigator.clipboard.writeText(copyData(hashes[idx])).catch(e=>console.error('copy',e));
    }));
  }catch(e){err.textContent='Error: '+e.message;err.style.display='block'}
  finally{ld.style.display='none'}
@@ -130,7 +130,7 @@ async function extractPkg(buf){
    else{pos+=v.getUint32(pos+4,true);if(pos>=raw.length)break}
   }
   return'(unknown)';
- }catch{return'(unknown)'}
+  }catch(e){console.log(e);return'(unknown)'}
 }
 
 async function extractHashes(buf){
@@ -171,16 +171,16 @@ async function extractHashes(buf){
          const ha=new Uint8Array(hb);
          const hex=Array.from(ha).map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join(':');
          if(!hashes.includes(hex))hashes.push(hex);
-        }catch{}
+         }catch(e){console.log(e);}
+        }
        }
       }
      }
     }
+    x=vs+vl;
    }
-   x=vs+vl;
-  }
- return hashes;
-}
+  return hashes;
+ }
 </script>
 </body>
 </html>

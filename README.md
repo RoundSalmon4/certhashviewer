@@ -50,3 +50,7 @@ Neither tool relies on external command-line tools (`apksigner`, `keytool`, `ope
 ## Usage
 
 Open `index.html` in any modern browser, then drag an APK onto the page or click to browse. The hash displays immediately — no installation or backend required.
+
+## License
+
+[MIT](LICENSE)
