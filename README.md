@@ -10,7 +10,7 @@ The tool performs these steps entirely in JavaScript:
 
 2. **Finds the APK Signing Block** — locates the End of Central Directory (EOCD) record, reads the Central Directory offset, then searches backward for the magic bytes `APK Sig Block 42`. This identifies the v2/v3 APK signing block appended between the ZIP content and the Central Directory.
 
-3. **Extracts the signing certificate** — parses the ID-value pairs in the signing block looking for signer IDs (`0x7109871a` for v2, `0xf05368c0` for v3). Within each signer block, locates the DER-encoded X.509 certificate by scanning for `0x30 0x82` (ASN.1 SEQUENCE with long-form length) with a reasonable certificate size (300–5000 bytes). The certificate bytes are passed to the browser's native X.509 parser.
+3. **Extracts the signing certificate** — parses the ID-value pairs in the signing block looking for signer IDs (`0x7109871a` for v2, `0xf05368c0` for v3). Within each signer block, scans for DER-encoded X.509 certificates matching `0x30 0x82` (ASN.1 SEQUENCE with long-form length). Non-certificate structures (SubjectPublicKeyInfo, TBSCertificate bodies) are filtered out by verifying the inner SEQUENCE begins with an INTEGER serial or EXPLICIT version tag, not an OID. Only unique non-nested certificates are hashed.
 
 4. **Computes the SHA-256 hash** — feeds the certificate's DER-encoded bytes through the [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API) (`crypto.subtle.digest`). The resulting hash is formatted as colon-separated uppercase hex (e.g., `3A:04:A8:...:02:B2`).
 
@@ -18,9 +18,24 @@ The tool performs these steps entirely in JavaScript:
 
 The APK is never sent to any server. All processing uses `ArrayBuffer`, `DataView`, and native browser APIs.
 
-## How this differs from AppVerifier
+## Copying results
 
-AppVerifier uses a **different code path** to obtain the same certificate hash, which makes cross-verification useful:
+Each `[copy]` button copies the package name and hash in newline-separated format:
+
+```
+dev.soupslurpr.appverifier
+3A:04:A8:0B:2A:88:33:4C:74:74:85:F0:B2:15:16:40:A3:8B:B3:D2:D7:3A:8E:AB:81:DF:50:3E:0F:02:02:B2
+```
+
+This format is compatible with Android apps that accept clipboard verification, such as [AppVerifier](https://github.com/soupslurpr/AppVerifier).
+
+## Reporting suspected false positives
+
+If you believe a hash shown by this tool is not a real signing certificate, click the `[report]` link next to it. This opens a pre-filled GitHub issue with the hash, APK filename, and package name for inspection.
+
+## Comparison with AppVerifier
+
+AppVerifier uses a **different code path** to obtain the same certificate hash. Cross-verifying between the two provides stronger confidence:
 
 | | This tool | AppVerifier |
 |---|---|---|
@@ -30,7 +45,7 @@ AppVerifier uses a **different code path** to obtain the same certificate hash, 
 | **Hash computation** | Web Crypto API (`crypto.subtle.digest('SHA-256', ...)`) | Java `MessageDigest.getInstance("SHA-256")` |
 | **Certificate byte source** | DER bytes directly parsed from the v2/v3 APK signing block | `Signature.toByteArray()` from the Android framework |
 
-Neither tool relies on external command-line tools (`apksigner`, `keytool`, `openssl`). Both implement the same specification (Android APK signing scheme v2/v3) independently. If both produce the same hash, it is strong evidence the hash is correct — a shared bug across independent implementations is unlikely.
+Neither tool relies on external command-line tools (`apksigner`, `keytool`, `openssl`). Both implement the same specification (Android APK signing scheme v2/v3) independently. Matching hashes across implementations reduces the chance of a shared bug.
 
 ## Usage
 

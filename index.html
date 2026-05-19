@@ -24,6 +24,8 @@ p{color:#8b949e;margin-bottom:1.5rem}
 .note{font-size:.8rem;color:#484f58;margin-top:1rem}
 .copy{font-size:.75rem;color:#58a6ff;cursor:pointer;margin-left:.5rem;user-select:none}
 .copy:hover{color:#79c0ff}
+.report{font-size:.75rem;color:#d29922;cursor:pointer;margin-left:.5rem;user-select:none;text-decoration:none}
+.report:hover{color:#e3b341}
 .sep{margin:1rem 0;border:0;border-top:1px solid #30363d}
 .multi{font-size:.8rem;color:#d29922;margin-top:.25rem}
 </style>
@@ -45,7 +47,6 @@ p{color:#8b949e;margin-bottom:1.5rem}
 <div class="stat" id="stat"></div>
 </div>
 <p class="note">All client-side via Web Crypto API. No upload.</p>
-<p class="ft">Port of <a href="https://github.com/anomalyco/opencode" style="color:#484f58">apk-hash.ps1</a></p>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -65,18 +66,16 @@ async function process(file){
   const pkgName=await extractPkg(buf);
   const hashes=await extractHashes(buf);
   if(hashes.length===0)throw new Error('No signing certificate hashes found. The APK may not be signed with v2/v3 scheme.');
-  pkg.textContent=pkgName;
-  hs.innerHTML=hashes.map((h,i)=>`<div class="hash">${h}${hashes.length>1?' <span class="copy" data-i="'+i+'">[copy]</span>':''}</div>`).join('');
-  if(hashes.length===1){
-   const h=hashes[0];hs.innerHTML=`<div class="hash">${h} <span class="copy">[copy]</span></div>`;
-  }
-  stat.textContent=hashes.length===1?'1 signer':`${hashes.length} signers (multiple)`;
-  if(hashes.length>1)stat.innerHTML+=' <span class="multi">verify independently which is the expected signing cert</span>';
-  res.style.display='block';
-  document.querySelectorAll('.copy').forEach(el=>el.addEventListener('click',()=>{
-   const idx=el.dataset.i!==undefined?parseInt(el.dataset.i):0;
-   navigator.clipboard.writeText(hashes[idx]).catch(()=>{});
-  }));
+   pkg.innerHTML='<span style="color:#8b949e;font-size:.8rem">'+(file.name||'')+'</span><br>'+pkgName;
+    function copyData(h){return pkgName+'\n'+h;}
+    function issueUrl(h,i){const t=encodeURIComponent('False positive report: '+h);const b=encodeURIComponent('## False Positive Report\n\n**APK:** '+(file.name||'')+'\n**Package:** '+pkgName+'\n**Hash:** '+h+'\n**Notes:**');return 'https://github.com/RoundSalmon4/certhashviewer/issues/new?title='+t+'&body='+b;}
+    hs.innerHTML=hashes.map((h,i)=>`<div class="hash">${h} <span class="copy" data-i="${i}">[copy]</span> <a class="report" href="${issueUrl(h,i)}" target="_blank">[report]</a></div>`).join('');
+   stat.textContent=hashes.length===1?'1 signer':`${hashes.length} signers (multiple)`;
+   if(hashes.length>1)stat.innerHTML+=' <span class="multi">verify independently which is the expected signing cert</span>';
+   res.style.display='block';
+   document.querySelectorAll('.copy').forEach(el=>el.addEventListener('click',()=>{
+    const idx=parseInt(el.dataset.i);navigator.clipboard.writeText(copyData(hashes[idx])).catch(()=>{});
+   }));
  }catch(e){err.textContent='Error: '+e.message;err.style.display='block'}
  finally{ld.style.display='none'}
 }
@@ -86,59 +85,52 @@ async function extractPkg(buf){
   const zip=await JSZip.loadAsync(buf);
   const me=zip.file('AndroidManifest.xml');
   if(!me)return '(unknown)';
-  const raw=await me.async('uint8array');
-  return parseAXML(raw)||'(unknown)';
- }catch{return '(unknown)'}
-}
-
-function parseAXML(d){
- const v=new DataView(d.buffer,d.byteOffset,d.byteLength);
- let pos=0;
- const chunkType=v.getUint16(pos,true);pos+=2;
- const hdrSize=v.getUint16(pos,true);pos+=2;
- const chunkSize=v.getUint32(pos,true);pos+=4;
- if(chunkType!==3)return null;
- pos=hdrSize;
- const spType=v.getUint16(pos,true);pos+=2;
- pos+=2; // headerSize
- pos+=4; // chunkSize
- if(spType!==1)return null;
- const strCount=v.getUint32(pos,true);pos+=4;
- const styCount=v.getUint32(pos,true);pos+=4;
- const flags=v.getUint32(pos,true);pos+=4;
- const strOff=v.getUint32(pos,true);pos+=4;
- const styOff=v.getUint32(pos,true);pos+=4;
- const isUTF8=!!(flags&0x100);
- const chunkStart=pos-8-(hdrSize-8);
- const strDataStart=chunkStart+strOff;
- const strOffsets=[];
- for(let i=0;i<strCount;i++){strOffsets.push(v.getUint32(pos,true));pos+=4}
- const strs=[];
- for(let i=0;i<strCount;i++){
-  const so=strOffsets[i];
-  try{
+  const raw=await me.async('uint8array');const v=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
+  let pos=0;
+  const xmlType=v.getUint16(pos,true);pos+=2;const xmlHdr=v.getUint16(pos,true);pos+=2;const xmlSize=v.getUint32(pos,true);pos+=4;
+  if(xmlType!==3)return'(unknown)';
+  pos=xmlHdr;
+  const spType=v.getUint16(pos,true);pos+=2;const spHdr=v.getUint16(pos,true);pos+=2;const spSize=v.getUint32(pos,true);pos+=4;
+  if(spType!==1)return'(unknown)';
+  const spStart=pos-8;
+  const strCnt=v.getUint32(pos,true);pos+=4;v.getUint32(pos,true);pos+=4;const flags=v.getUint32(pos,true);pos+=4;const strOff=v.getUint32(pos,true);pos+=4;v.getUint32(pos,true);pos+=4;
+  const isUTF8=!!(flags&0x100),sdStart=spStart+strOff;
+  const offs=[];for(let i=0;i<strCnt;i++){offs.push(v.getUint32(pos,true));pos+=4}
+  pos=spStart+spSize;
+  const strAt=i=>{
+   if(i<0||i>=strCnt)return'';
+   const o=sdStart+offs[i];let p=o;
    if(isUTF8){
-    let p=strDataStart+so;
-    const cc=rle(d,p);p+=cc.bytes;
-    const bc=rle(d,p);p+=bc.bytes;
-    const dec=new TextDecoder('utf-8').decode(d.slice(p,p+bc.value));
-    strs.push(dec);
+    const is2cc=!!(raw[p]&0x80),cc=is2cc?((raw[p]&0x7F)<<8)|raw[p+1]:raw[p];p+=is2cc?2:1;
+    const is2bc=!!(raw[p]&0x80),bc=is2bc?((raw[p]&0x7F)<<8)|raw[p+1]:raw[p];p+=is2bc?2:1;
+    const end=p+bc;let e2=end;for(let j=p;j<end;j++){if(raw[j]===0){e2=j;break}}
+    return new TextDecoder('utf-8',{fatal:false}).decode(raw.slice(p,e2));
    }else{
-    let p=strDataStart+so;const c=[];
-    while(p+1<d.length){const cv=v.getUint16(p,true);p+=2;if(cv===0)break;c.push(String.fromCharCode(cv))}
-    strs.push(c.join(''));
+    const len=v.getUint16(p,true);p+=2;
+    const c=[];for(let j=0;j<len;j++){c.push(String.fromCharCode(v.getUint16(p,true)));p+=2;}
+    return c.join('');
    }
-  }catch{}
- }
- for(const s of strs){
-  if(s&&/^[a-zA-Z][\w.]*\.[\w.]+$/.test(s)&&!s.startsWith('android.')&&!s.startsWith('com.android.'))return s;
- }
- return null;
-}
-function rle(d,o){
- let b=d[o];
- if(!(b&0x80))return{value:b&0x7F,bytes:1};
- return{value:((b&0x7F)<<8)|d[o+1],bytes:2};
+  };
+  while(pos<raw.length){
+   const ct=v.getUint16(pos,true);
+   if(ct===0x0102){
+    const hdrSize=v.getUint16(pos+2,true);const chSize=v.getUint32(pos+4,true);
+    const elName=strAt(v.getUint32(pos+20,true));
+    if(elName==='manifest'){
+     const attrStart=v.getUint16(pos+24,true);const attrSize=v.getUint16(pos+26,true);const attrCnt=v.getUint16(pos+28,true);
+     for(let a=0;a<attrCnt;a++){
+      const ab=pos+hdrSize+attrStart+a*attrSize;
+      const an=strAt(v.getUint32(ab+4,true));const ar=v.getUint32(ab+8,true);
+      if(an==='package'){const r=strAt(ar);if(r)return r}
+     }
+    }
+    pos+=chSize;
+   }else if(ct===0x0103||ct===0x0104||ct===0x0100||ct===0x0101){pos+=v.getUint32(pos+4,true);}
+   else if(ct===0x0105){break}
+   else{pos+=v.getUint32(pos+4,true);if(pos>=raw.length)break}
+  }
+  return'(unknown)';
+ }catch{return'(unknown)'}
 }
 
 async function extractHashes(buf){
@@ -156,32 +148,37 @@ async function extractHashes(buf){
  const bs=Number(v.getBigUint64(mp-8,true));
  let x=mp+8-bs+8;
  const end=mp-8;
- const hashes=[];
- while(x+8<=end){
-  const id=v.getUint32(x,true);
-  const vl=v.getUint32(x+4,true);
-  const vs=x+8;
-  if(id===0x7109871a||id===0xf05368c0){
-   const sub=new Uint8Array(buf,vs,vl);
-   for(let k=0;k<sub.length-4;k++){
-    if(sub[k]===0x30&&sub[k+1]===0x82){
-     const cl=(sub[k+2]<<8)|sub[k+3];
-     const tot=4+cl;
-     if(cl>300&&cl<5000&&(k+tot)<=sub.length){
-      const der=new Uint8Array(tot);
-      der.set(new Uint8Array(sub.buffer,sub.byteOffset+k,tot));
-      try{
-       const hb=await crypto.subtle.digest('SHA-256',der);
-       const ha=new Uint8Array(hb);
-       const hex=Array.from(ha).map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join(':');
-       if(!hashes.includes(hex))hashes.push(hex);
-      }catch{}
+  const hashes=[];
+  while(x+8<=end){
+   const id=v.getUint32(x,true);
+   const vl=v.getUint32(x+4,true);
+   const vs=x+8;
+   if(id===0x7109871a||id===0xf05368c0){
+    const sub=new Uint8Array(buf,vs,vl);
+    const ranges=[];
+    for(let k=0;k<sub.length-4;k++){
+     if(sub[k]===0x30&&sub[k+1]===0x82){
+      const cl=(sub[k+2]<<8)|sub[k+3];
+      const tot=4+cl;
+      if(cl>300&&cl<5000&&(k+tot)<=sub.length){
+       const nested=ranges.some(r=>k>=r[0]&&k+tot<=r[1]);
+        const t=sub[k+8];if(!nested&&(t===0x02||t===0xa0)){
+         ranges.push([k,k+tot]);
+         const der=new Uint8Array(tot);
+        der.set(new Uint8Array(sub.buffer,sub.byteOffset+k,tot));
+        try{
+         const hb=await crypto.subtle.digest('SHA-256',der);
+         const ha=new Uint8Array(hb);
+         const hex=Array.from(ha).map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join(':');
+         if(!hashes.includes(hex))hashes.push(hex);
+        }catch{}
+       }
+      }
      }
     }
    }
+   x=vs+vl;
   }
-  x=vs+vl;
- }
  return hashes;
 }
 </script>
