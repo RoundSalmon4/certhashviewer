@@ -22,8 +22,10 @@ p{color:#8b949e;margin-bottom:1.5rem}
 .err{color:#f85149;margin-top:1rem;display:none}
 .ft{margin-top:2rem;color:#484f58;font-size:.8rem}
 .note{font-size:.8rem;color:#484f58;margin-top:1rem}
-.copy{font-size:.75rem;color:#58a6ff;cursor:pointer;margin-left:.5rem;user-select:none}
-.copy:hover{color:#79c0ff}
+ .copy{font-size:.75rem;color:#58a6ff;cursor:pointer;margin-left:.5rem;user-select:none}
+ .copy:hover{color:#79c0ff}
+ .toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:.5rem 1rem;border-radius:6px;font-size:.85rem;opacity:0;transition:opacity .2s;pointer-events:none}
+ .toast.show{opacity:1}
 .report{font-size:.75rem;color:#d29922;cursor:pointer;margin-left:.5rem;user-select:none;text-decoration:none}
 .report:hover{color:#e3b341}
 .sep{margin:1rem 0;border:0;border-top:1px solid #30363d}
@@ -47,6 +49,7 @@ p{color:#8b949e;margin-bottom:1.5rem}
 <div class="stat" id="stat"></div>
 </div>
 <p class="note">All client-side via Web Crypto API. No upload.</p>
+<div class="toast" id="toast">Copied!</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -73,9 +76,11 @@ async function process(file){
    stat.textContent=hashes.length===1?'1 signer':`${hashes.length} signers (multiple)`;
    if(hashes.length>1)stat.innerHTML+=' <span class="multi">verify independently which is the expected signing cert</span>';
    res.style.display='block';
-   document.querySelectorAll('.copy').forEach(el=>el.addEventListener('click',()=>{
-    const idx=parseInt(el.dataset.i);    navigator.clipboard.writeText(copyData(hashes[idx])).catch(e=>console.error('copy',e));
-   }));
+    const toast=document.getElementById('toast');let tmo;
+    document.querySelectorAll('.copy').forEach(el=>el.addEventListener('click',()=>{
+     const idx=parseInt(el.dataset.i);navigator.clipboard.writeText(copyData(hashes[idx])).catch(e=>console.error('copy',e));
+     clearTimeout(tmo);toast.classList.add('show');tmo=setTimeout(()=>toast.classList.remove('show'),1500);
+    }));
  }catch(e){err.textContent='Error: '+e.message;err.style.display='block'}
  finally{ld.style.display='none'}
 }
